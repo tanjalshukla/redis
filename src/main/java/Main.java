@@ -1,3 +1,4 @@
+import java.io.DataInputStream;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -18,8 +19,13 @@ public class Main {
       serverSocket.setReuseAddress(true);
       // Wait for connection from client.
       clientSocket = serverSocket.accept();
-      // pong encoded using RESP format
-      clientSocket.getOutputStream().write("+PONG\r\n".getBytes());
+
+      DataInputStream in = new DataInputStream(clientSocket.getInputStream());
+      // loop while receiving input
+      while (in.read() != -1) {
+        // pong encoded using RESP format
+        clientSocket.getOutputStream().write("+PONG\r\n".getBytes());
+      }
 
     } catch (IOException e) {
       System.out.println("IOException: " + e.getMessage());
