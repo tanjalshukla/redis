@@ -1,7 +1,4 @@
-import java.io.BufferedInputStream;
-import java.io.DataInputStream;
-import java.io.EOFException;
-import java.io.IOException;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.InetSocketAddress;
@@ -35,16 +32,17 @@ public class Main {
   /** Handles multiple commands from one client thru virtual thread */
   private static void handleClient(Socket clientSocket) {
     try (clientSocket) {
-      DataInputStream in = new DataInputStream(clientSocket.getInputStream());
-      byte[] buffer = new byte[1024];
-      int bytesRead;
-      while ((bytesRead = in.read(buffer)) != -1) {
-        clientSocket.getOutputStream().write("+PONG\r\n".getBytes());
-      }
+        BufferedInputStream in = new BufferedInputStream(clientSocket.getInputStream());
+        BufferedOutputStream out = new BufferedOutputStream(clientSocket.getOutputStream());
+        while (true) {
+            Protocol.handleCommand(in, out);
+            // ensure pushed to client
+            out.flush();
+        }
     } catch (EOFException _) {
       // ignore, client finished
     } catch (IOException e) {
-      System.out.println("Client Exception " + e.getMessage());
+      System.err.println("Client Exception " + e.getMessage());
     }
   }
 }
