@@ -1,7 +1,5 @@
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -9,35 +7,47 @@ public class Protocol {
 
     private static final int ASTERISK_BYTE = '*';
     private static final int BULK_STRING = '$';
+    private static final int COMPLETE = -1;
+    private static final byte CR = '\r';
+    private static final byte LF = '\n';
 
-    public enum commands {
-        ECHO
+    public enum Commands {
+        ECHO,
+        PING
     }
 
     static void handleCommand(BufferedInputStream in, BufferedOutputStream out) throws IOException {
-        List<String> args = processArgs(in);
-
-        switch (args.get(0).toUpperCase()) {
-            case "ECHO" -> {
+        List<String> args = parseArray(in);
+        System.out.println("Arguments: " + args.toString());
+        Commands command = Commands.valueOf(args.getFirst().toUpperCase());
+        switch (command) {
+            case ECHO -> {
                 if (args.size() != 2) throw new RuntimeException("Invalid number of arguments for ECHO");
                 String message = args.get(1);
-                String response = "+" + message + "\r\n";
-                writeString(new BufferedOutputStream(out), message);
+                writeBulkString(out, message);
+            }
+            case PING -> {
+                writeString(out, "PONG");
             }
             default -> throw new RuntimeException("Unknown command: " + args.get(0));
         }
     }
 
     static void writeString(BufferedOutputStream out, String string) throws IOException {
-        out.write(("+" + string + "\r\n").getBytes());
+        out.write(("+" + string + "\r\n").getBytes(StandardCharsets.UTF_8));
     }
 
-    static List<String> processArgs(BufferedInputStream in) throws IOException {
+    static void writeBulkString(BufferedOutputStream out, String string) throws IOException {
+        out.write(("$" + string.length() + "\r\n" + string + "\r\n").getBytes(StandardCharsets.UTF_8));
+    }
+
+    static List<String> parseArray(BufferedInputStream in) throws IOException {
         int type;
         switch (type = in.read()) {
             case ASTERISK_BYTE -> { // resp array
-                int count = in.read();
+                int count = parseIntLine(in);
                 List<String> args = new ArrayList<>(count);
+
                 for (int i = 0; i < count; i++) {
                     // read bulk string
                     int bulkType = in.read();
@@ -45,10 +55,14 @@ public class Protocol {
 
                     int bulkLength = parseIntLine(in);
                     byte[] bulkData = in.readNBytes(bulkLength);
-                    args.add(new String(bulkData));
+                    args.add(new String(bulkData, StandardCharsets.UTF_8));
                     consumeCRLF(in);
                 }
                 return args;
+            }
+            case COMPLETE -> {
+                // end of stream
+                throw new EOFException("Client completed");
             }
             default -> {
                 // expect array
@@ -68,8 +82,8 @@ public class Protocol {
                 negative = true;
                 continue;
             }
-            if (b == '\r') {
-                if (in.read() != '\n') {
+            if (b == CR) {
+                if (in.read() != LF) {
                     throw new RuntimeException("Expected newline");
                 }
                 break;
@@ -81,10 +95,10 @@ public class Protocol {
     }
 
     private static void consumeCRLF(BufferedInputStream in) throws IOException {
-        if (in.read() != '\r') {
+        if (in.read() != CR) {
             throw new RuntimeException("Expected carriage return");
         }
-        if (in.read() != '\n') {
+        if (in.read() != LF) {
             throw new RuntimeException("Expected newline");
         }
     }
