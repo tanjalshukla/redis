@@ -11,9 +11,14 @@ public class Protocol {
     private static final byte CR = '\r';
     private static final byte LF = '\n';
 
+    // for null keys
+    private static final String NULL_BULK_STRING = "$-1\r\n";
+
     public enum Commands {
         ECHO,
-        PING
+        PING,
+        SET,
+        GET
     }
 
     static void handleCommand(BufferedInputStream in, BufferedOutputStream out) throws IOException {
@@ -29,6 +34,18 @@ public class Protocol {
             case PING -> {
                 writeString(out, "PONG");
             }
+            case SET -> {
+                Store.data.put(args.get(1), args.get(2));
+                writeString(out, "OK");
+            }
+            case GET -> {
+                String key = args.get(1);
+                if (!Store.data.containsKey(key)) {
+                    writeNullBulkString(out);
+                    break;
+                }
+                writeBulkString(out, Store.data.get(key));
+            }
             default -> throw new RuntimeException("Unknown command: " + args.get(0));
         }
     }
@@ -39,6 +56,10 @@ public class Protocol {
 
     static void writeBulkString(BufferedOutputStream out, String string) throws IOException {
         out.write(("$" + string.length() + "\r\n" + string + "\r\n").getBytes(StandardCharsets.UTF_8));
+    }
+
+    static void writeNullBulkString(BufferedOutputStream out) throws IOException {
+        out.write(NULL_BULK_STRING.getBytes(StandardCharsets.UTF_8));
     }
 
     static List<String> parseArray(BufferedInputStream in) throws IOException {
