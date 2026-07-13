@@ -1,5 +1,6 @@
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -18,7 +19,14 @@ public class Protocol {
         ECHO,
         PING,
         SET,
-        GET
+        GET,
+        EX,
+        PX
+    }
+
+    public enum ExpirationUnit {
+        EX,
+        PX
     }
 
     static void handleCommand(BufferedInputStream in, BufferedOutputStream out) throws IOException {
@@ -35,7 +43,23 @@ public class Protocol {
                 writeString(out, "PONG");
             }
             case SET -> {
-                Store.data.put(args.get(1), args.get(2));
+                Instant expiry = null;
+                if (args.size() == 5) {
+                    ExpirationUnit expiryType = ExpirationUnit.valueOf(args.get(3).toUpperCase());
+                    if (expiryType != ExpirationUnit.EX && expiryType != ExpirationUnit.PX) {
+                        throw new RuntimeException("Invalid expiry type: " + args.get(3));
+                    }
+                    if (ExpirationUnit.EX == expiryType) {
+                        // seconds
+                        expiry = Instant.now().plusSeconds(Long.parseLong(args.get(4)));
+                    } else {
+                        // milliseconds
+                        expiry = Instant.now().plusMillis(Long.parseLong(args.get(4)));
+                    }
+                } else if (args.size() != 3) {
+                    throw new RuntimeException("Invalid number of arguments for SET");
+                }
+                Store.data.put(args.get(1), new Store.Entry(args.get(2), expiry));
                 writeString(out, "OK");
             }
             case GET -> {
@@ -44,7 +68,13 @@ public class Protocol {
                     writeNullBulkString(out);
                     break;
                 }
-                writeBulkString(out, Store.data.get(key));
+                Store.Entry entry = Store.data.get(key);
+                if (entry.expiresAt() != null && entry.expiresAt().isBefore(Instant.now())) {
+                    Store.data.remove(key);
+                    writeNullBulkString(out);
+                } else {
+                    writeBulkString(out, entry.value());
+                }
             }
             default -> throw new RuntimeException("Unknown command: " + args.get(0));
         }
