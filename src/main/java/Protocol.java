@@ -21,7 +21,8 @@ public class Protocol {
         SET,
         GET,
         EX,
-        PX
+        PX,
+        RPUSH
     }
 
     public enum ExpirationUnit {
@@ -59,7 +60,8 @@ public class Protocol {
                 } else if (args.size() != 3) {
                     throw new RuntimeException("Invalid number of arguments for SET");
                 }
-                Store.data.put(args.get(1), new Store.Entry(args.get(2), expiry));
+                Store.data.put(args.get(1), new Store.Entry(
+                        new Store.RedisString(args.get(2)), expiry));
                 writeString(out, "OK");
             }
             case GET -> {
@@ -73,15 +75,31 @@ public class Protocol {
                     Store.data.remove(key);
                     writeNullBulkString(out);
                 } else {
-                    writeBulkString(out, entry.value());
+                    writeBulkString(out, ((Store.RedisString) entry.value()).value()); // gets underlying string
                 }
+            }
+            case RPUSH -> {
+                String key = args.get(1);
+                List<String> values = ((Store.RedisList) Store.data.computeIfAbsent(key, k ->
+                        new Store.Entry(new Store.RedisList(
+                                new ArrayList<>()), null)).value()).values();
+
+                values.addAll(args.subList(2, args.size()));
+                writeInteger(out, values.size());
             }
             default -> throw new RuntimeException("Unknown command: " + args.get(0));
         }
     }
 
+    /**
+     * RESP format helpers
+     */
     static void writeString(BufferedOutputStream out, String string) throws IOException {
         out.write(("+" + string + "\r\n").getBytes(StandardCharsets.UTF_8));
+    }
+
+    static void writeInteger(BufferedOutputStream out, long integer) throws IOException {
+        out.write((":" + integer + "\r\n").getBytes(StandardCharsets.UTF_8));
     }
 
     static void writeBulkString(BufferedOutputStream out, String string) throws IOException {
