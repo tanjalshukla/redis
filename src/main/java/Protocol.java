@@ -84,8 +84,10 @@ public class Protocol {
                 Store.RedisList redisList;
                 if (Store.data.containsKey(key)) {
                     redisList = Store.data.get(key).value() instanceof Store.RedisList list ? list : null;
-                    if  (redisList == null) writeNullBulkString(out); // key not associated with redis list
-                    return;
+                    if  (redisList == null) {
+                        writeNullBulkString(out); // key not associated with redis list
+                        return;
+                    }
                 } else {
                     redisList = new Store.RedisList(new ArrayList<>());
                     Store.data.put(key, new Store.Entry(redisList, null));
