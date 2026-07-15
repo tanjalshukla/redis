@@ -81,16 +81,24 @@ public class Protocol {
             case RPUSH -> {
                 String key = args.get(1);
 
+                Store.Entry entry = Store.data.get(key);
                 Store.RedisList redisList;
-                if (Store.data.containsKey(key)) {
-                    redisList = Store.data.get(key).value() instanceof Store.RedisList list ? list : null;
-                    if  (redisList == null) {
-                        writeNullBulkString(out); // key not associated with redis list
-                        return;
-                    }
-                } else {
+                if (entry == null) {
+                    // inserting new redis list
                     redisList = new Store.RedisList(new ArrayList<>());
                     Store.data.put(key, new Store.Entry(redisList, null));
+                } else if (entry.value() instanceof Store.RedisList list) {
+                    if (entry.expiresAt() != null && entry.expiresAt().isBefore(Instant.now())) {
+                        // remove and re-set expired key-value pair
+                        Store.data.remove(key);
+                        redisList = new Store.RedisList(new ArrayList<>());
+                        Store.data.put(key, new Store.Entry(redisList, null));
+                    }
+                    redisList = list;
+                } else {
+                    // value of entry not redis list
+                    writeNullBulkString(out);
+                    return;
                 }
 
                 redisList.pushAll(args.subList(2, args.size()));
