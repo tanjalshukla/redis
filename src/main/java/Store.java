@@ -1,4 +1,5 @@
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -9,9 +10,34 @@ public class Store {
     sealed interface RedisValue
         permits RedisString, RedisList {}
 
+    static final class RedisList implements RedisValue {
+        private final List<String> values;
+
+        public RedisList(List<String> values) {
+            this.values = values;
+        }
+
+        void push(String value) {
+            values.add(value);
+        }
+
+        void pushAll(List<String> values) {
+            this.values.addAll(values);
+        }
+
+        int size() {
+            return values.size();
+        }
+
+        List<String> values() {
+            return Collections.unmodifiableList(values);
+        }
+
+    }
+
     record RedisString(String value) implements RedisValue {}
 
-    record RedisList(List<String> values) implements RedisValue {}
+
 
     record Entry (RedisValue value, Instant expiresAt){};
 

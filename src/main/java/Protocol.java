@@ -80,12 +80,19 @@ public class Protocol {
             }
             case RPUSH -> {
                 String key = args.get(1);
-                List<String> values = ((Store.RedisList) Store.data.computeIfAbsent(key, k ->
-                        new Store.Entry(new Store.RedisList(
-                                new ArrayList<>()), null)).value()).values();
 
-                values.addAll(args.subList(2, args.size()));
-                writeInteger(out, values.size());
+                Store.RedisList redisList;
+                if (Store.data.containsKey(key)) {
+                    redisList = Store.data.get(key).value() instanceof Store.RedisList list ? list : null;
+                    if  (redisList == null) writeNullBulkString(out); // key not associated with redis list
+                    return;
+                } else {
+                    redisList = new Store.RedisList(new ArrayList<>());
+                    Store.data.put(key, new Store.Entry(redisList, null));
+                }
+
+                redisList.pushAll(args.subList(2, args.size()));
+                writeInteger(out, redisList.size());
             }
             default -> throw new RuntimeException("Unknown command: " + args.get(0));
         }
