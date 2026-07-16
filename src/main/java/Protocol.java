@@ -26,7 +26,8 @@ public class Protocol {
         RPUSH,
         LPUSH,
         LRANGE,
-        LLEN
+        LLEN,
+        LPOP
     }
 
     public enum ExpirationUnit {
@@ -101,7 +102,6 @@ public class Protocol {
 
                 int start = remapNegativeIdx(Integer.parseInt(args.get(2)), list.size());
                 int end = remapNegativeIdx(Integer.parseInt(args.get(3)), list.size());
-                System.out.println("LRANGE start: " + start + ", end: " + end + ", list size: " + list.size());
 
                 // if start greater than list size or start later than end, empty array
                 if (start >= list.size() || start > end) {
@@ -118,6 +118,15 @@ public class Protocol {
                     writeInteger(out, 0);
                 } else {
                     writeInteger(out, list.size());
+                }
+            }
+            case LPOP -> {
+                String key = args.get(1);
+                Store.Entry entry = Store.data.get(key);
+                if (entry == null || !(entry.value() instanceof Store.RedisList list)) {
+                    writeNullBulkString(out);
+                } else {
+                    writeBulkString(out, list.pop());
                 }
             }
             default -> throw new RuntimeException("Unknown command: " + args.get(0));

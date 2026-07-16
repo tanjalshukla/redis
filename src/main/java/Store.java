@@ -1,5 +1,6 @@
 import java.time.Instant;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,6 +28,10 @@ public class Store {
             this.values.addAll(values);
         }
 
+        String pop() {
+            return this.values.removeFirst();
+        }
+
         List<String> range(int start, int end) {
             return values.subList(start, Math.min(end, values.size() - 1) + 1); // inclusive of ending index
         }
@@ -42,8 +47,6 @@ public class Store {
     }
 
     record RedisString(String value) implements RedisValue {}
-
-
 
     record Entry (RedisValue value, Instant expiresAt){};
 
