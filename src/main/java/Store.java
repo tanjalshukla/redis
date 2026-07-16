@@ -17,8 +17,10 @@ public class Store {
             this.values = values;
         }
 
-        void push(String value) {
-            values.add(value);
+        void queueAll(List<String> values) {
+            for  (String value : values) {
+                this.values.addFirst(value);
+            }
         }
 
         void pushAll(List<String> values) {

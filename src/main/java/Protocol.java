@@ -24,6 +24,7 @@ public class Protocol {
         EX,
         PX,
         RPUSH,
+        LPUSH,
         LRANGE
     }
 
@@ -81,30 +82,10 @@ public class Protocol {
                 }
             }
             case RPUSH -> {
-                String key = args.get(1);
-
-                Store.Entry entry = Store.data.get(key);
-                Store.RedisList redisList;
-                if (entry == null) {
-                    // inserting new redis list
-                    redisList = new Store.RedisList(new ArrayList<>());
-                    Store.data.put(key, new Store.Entry(redisList, null));
-                } else if (entry.value() instanceof Store.RedisList list) {
-                    if (expired(entry)) {
-                        // replace expired key-value pair
-                        redisList = new Store.RedisList(new ArrayList<>());
-                        Store.data.put(key, new Store.Entry(redisList, null));
-                    } else {
-                        redisList = list;
-                    }
-                } else {
-                    // value of entry not redis list
-                    writeNullBulkString(out);
-                    return;
-                }
-
-                redisList.pushAll(args.subList(2, args.size()));
-                writeInteger(out, redisList.size());
+               pushToRedisList(args, out, Commands.RPUSH);
+            }
+            case LPUSH -> {
+                pushToRedisList(args, out, Commands.LPUSH);
             }
             case LRANGE -> {
                 String key = args.get(1);
@@ -131,6 +112,42 @@ public class Protocol {
             }
             default -> throw new RuntimeException("Unknown command: " + args.get(0));
         }
+    }
+
+    static void pushToRedisList(List<String> args, BufferedOutputStream out, Commands command) throws IOException {
+        String key = args.get(1);
+
+        Store.Entry entry = Store.data.get(key);
+        Store.RedisList redisList;
+        if (entry == null) {
+            // inserting new redis list
+            redisList = new Store.RedisList(new ArrayList<>());
+            Store.data.put(key, new Store.Entry(redisList, null));
+        } else if (entry.value() instanceof Store.RedisList list) {
+            if (expired(entry)) {
+                // replace expired key-value pair
+                redisList = new Store.RedisList(new ArrayList<>());
+                Store.data.put(key, new Store.Entry(redisList, null));
+            } else {
+                redisList = list;
+            }
+        } else {
+            // value of entry not redis list
+            writeNullBulkString(out);
+            return;
+        }
+
+        if (command == Commands.LPUSH) {
+            redisList.queueAll(args.subList(2, args.size()));
+            writeInteger(out, redisList.size());
+            return;
+        } else  if (command == Commands.RPUSH) {
+            redisList.pushAll(args.subList(2, args.size()));
+            writeInteger(out, redisList.size());
+            return;
+        }
+
+        throw new IllegalArgumentException("Command must be LPUSH or RPUSH, provided: " + command);
     }
 
     /**
