@@ -117,10 +117,12 @@ public class Protocol {
                     return;
                 }
 
-                int start = Integer.parseInt(args.get(2));
-                int end = Integer.parseInt(args.get(3));
+                int start = remapNegativeIdx(Integer.parseInt(args.get(2)), list.size());
+                int end = remapNegativeIdx(Integer.parseInt(args.get(3)), list.size());
+                System.out.println("LRANGE start: " + start + ", end: " + end + ", list size: " + list.size());
+
                 // if start greater than list size or start later than end, empty array
-                if ((start < 0 || end < 0)|| start >= list.size() || start > end) {
+                if (start >= list.size() || start > end) {
                     writeArray(out, Collections.emptyList());
                     return;
                 }
@@ -218,6 +220,14 @@ public class Protocol {
         if (in.read() != LF) {
             throw new RuntimeException("Expected newline");
         }
+    }
+
+    static int remapNegativeIdx(int i, int size) {
+        if (i < 0) {
+            i = size + i;
+            return Math.max(i, 0);
+        }
+        return i;
     }
 
     static boolean expired(Store.Entry entry) {
