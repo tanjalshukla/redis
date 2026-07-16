@@ -25,6 +25,10 @@ public class Store {
             this.values.addAll(values);
         }
 
+        List<String> range(int start, int end) {
+            return values.subList(start, Math.min(end, values.size() - 1) + 1); // inclusive of ending index
+        }
+
         int size() {
             return values.size();
         }

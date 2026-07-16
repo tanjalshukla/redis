@@ -2,6 +2,7 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class Protocol {
@@ -22,7 +23,8 @@ public class Protocol {
         GET,
         EX,
         PX,
-        RPUSH
+        RPUSH,
+        LRANGE
     }
 
     public enum ExpirationUnit {
@@ -30,7 +32,7 @@ public class Protocol {
         PX
     }
 
-    static void handleCommand(BufferedInputStream in, BufferedOutputStream out) throws IOException {
+    static void handleCommand(BufferedInputStream in, BufferedOutputStream out) throws IOException, NumberFormatException {
         List<String> args = parseArray(in);
         System.out.println("Arguments: " + args.toString());
         Commands command = Commands.valueOf(args.getFirst().toUpperCase());
@@ -71,7 +73,7 @@ public class Protocol {
                     break;
                 }
                 Store.Entry entry = Store.data.get(key);
-                if (entry.expiresAt() != null && entry.expiresAt().isBefore(Instant.now())) {
+                if (expired(entry)) {
                     Store.data.remove(key);
                     writeNullBulkString(out);
                 } else {
@@ -88,13 +90,13 @@ public class Protocol {
                     redisList = new Store.RedisList(new ArrayList<>());
                     Store.data.put(key, new Store.Entry(redisList, null));
                 } else if (entry.value() instanceof Store.RedisList list) {
-                    if (entry.expiresAt() != null && entry.expiresAt().isBefore(Instant.now())) {
-                        // remove and re-set expired key-value pair
-                        Store.data.remove(key);
+                    if (expired(entry)) {
+                        // replace expired key-value pair
                         redisList = new Store.RedisList(new ArrayList<>());
                         Store.data.put(key, new Store.Entry(redisList, null));
+                    } else {
+                        redisList = list;
                     }
-                    redisList = list;
                 } else {
                     // value of entry not redis list
                     writeNullBulkString(out);
@@ -103,6 +105,27 @@ public class Protocol {
 
                 redisList.pushAll(args.subList(2, args.size()));
                 writeInteger(out, redisList.size());
+            }
+            case LRANGE -> {
+                String key = args.get(1);
+                Store.Entry entry = Store.data.get(key);
+                Store.RedisList redisList;
+                // null bulk string if no list or value of key not list or expired
+                if (entry == null || !(entry.value() instanceof Store.RedisList list)
+                        || expired(entry)) {
+                    writeArray(out, Collections.emptyList());
+                    return;
+                }
+
+                int start = Integer.parseInt(args.get(2));
+                int end = Integer.parseInt(args.get(3));
+                // if start greater than list size or start later than end, empty array
+                if ((start < 0 || end < 0)|| start >= list.size() || start > end) {
+                    writeArray(out, Collections.emptyList());
+                    return;
+                }
+
+                writeArray(out, list.range(start, end));
             }
             default -> throw new RuntimeException("Unknown command: " + args.get(0));
         }
@@ -125,6 +148,14 @@ public class Protocol {
 
     static void writeNullBulkString(BufferedOutputStream out) throws IOException {
         out.write(NULL_BULK_STRING.getBytes(StandardCharsets.UTF_8));
+    }
+
+    static void writeArray(BufferedOutputStream out, List<String> values) throws IOException {
+        // write num elements
+        out.write(("*" + values.size() + "\r\n").getBytes(StandardCharsets.UTF_8));
+        for (String value : values) {
+            writeBulkString(out, value);
+        }
     }
 
     static List<String> parseArray(BufferedInputStream in) throws IOException {
@@ -187,6 +218,10 @@ public class Protocol {
         if (in.read() != LF) {
             throw new RuntimeException("Expected newline");
         }
+    }
+
+    static boolean expired(Store.Entry entry) {
+        return entry.expiresAt() != null && entry.expiresAt().isBefore(Instant.now());
     }
 
 }
