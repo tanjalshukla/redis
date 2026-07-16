@@ -25,7 +25,8 @@ public class Protocol {
         PX,
         RPUSH,
         LPUSH,
-        LRANGE
+        LRANGE,
+        LLEN
     }
 
     public enum ExpirationUnit {
@@ -110,10 +111,20 @@ public class Protocol {
 
                 writeArray(out, list.range(start, end));
             }
+            case LLEN -> {
+                String key = args.get(1);
+                Store.Entry entry = Store.data.get(key);
+                if (entry == null || !(entry.value() instanceof Store.RedisList list)) {
+                    writeInteger(out, 0);
+                } else {
+                    writeInteger(out, list.size());
+                }
+            }
             default -> throw new RuntimeException("Unknown command: " + args.get(0));
         }
     }
 
+    // intended for LPUSH and RPUSH, inserts new list if empty/expired key
     static void pushToRedisList(List<String> args, BufferedOutputStream out, Commands command) throws IOException {
         String key = args.get(1);
 
