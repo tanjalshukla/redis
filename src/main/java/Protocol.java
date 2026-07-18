@@ -1,9 +1,7 @@
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 public class Protocol {
 
@@ -15,6 +13,7 @@ public class Protocol {
 
     // for null keys
     private static final String NULL_BULK_STRING = "$-1\r\n";
+    private static final String NULL_ARRAY = "*-1\r\n";
 
     public enum Commands {
         ECHO,
@@ -27,7 +26,8 @@ public class Protocol {
         LPUSH,
         LRANGE,
         LLEN,
-        LPOP
+        LPOP,
+        BLPOP
     }
 
     public enum ExpirationUnit {
@@ -35,9 +35,8 @@ public class Protocol {
         PX
     }
 
-    static void handleCommand(BufferedInputStream in, BufferedOutputStream out) throws IOException, NumberFormatException {
+    static void handleCommand(BufferedInputStream in, BufferedOutputStream out) throws IOException, InterruptedException {
         List<String> args = parseArray(in);
-        System.out.println("Arguments: " + args.toString());
         Commands command = Commands.valueOf(args.getFirst().toUpperCase());
         switch (command) {
             case ECHO -> {
@@ -71,17 +70,15 @@ public class Protocol {
             }
             case GET -> {
                 String key = args.get(1);
-                if (!Store.data.containsKey(key)) {
-                    writeNullBulkString(out);
-                    break;
-                }
                 Store.Entry entry = Store.data.get(key);
-                if (expired(entry)) {
-                    Store.data.remove(key);
+
+                if (entry == null || expired(entry) || !(entry.value() instanceof Store.RedisString)) {
+                    if (entry != null && expired(entry)) Store.data.remove(key);
                     writeNullBulkString(out);
-                } else {
-                    writeBulkString(out, ((Store.RedisString) entry.value()).value()); // gets underlying string
+                    return;
                 }
+
+                writeBulkString(out, ((Store.RedisString) entry.value()).value()); // gets underlying string
             }
             case RPUSH -> {
                pushToRedisList(args, out, Commands.RPUSH);
@@ -96,6 +93,7 @@ public class Protocol {
                 // null bulk string if no list or value of key not list or expired
                 if (entry == null || !(entry.value() instanceof Store.RedisList list)
                         || expired(entry)) {
+                    if (entry != null && expired(entry)) Store.data.remove(key);
                     writeArray(out, Collections.emptyList());
                     return;
                 }
@@ -131,7 +129,6 @@ public class Protocol {
 
                 // if multiple pop arg
                 if (args.size() > 2) {
-                    System.out.println("Popping multiple");
                     // pop multiple
                     int num = Integer.parseInt(args.get(2));
                     List<String> popped = list.popMany(num);
@@ -139,7 +136,28 @@ public class Protocol {
                     return;
                 }
                 // pop once
-                writeBulkString(out, list.pop());
+                String popped = list.pop();
+                if (popped == null) writeNullBulkString(out);
+                else writeBulkString(out, popped);
+            }
+            case BLPOP -> {
+                String key = args.get(1);
+                long timeoutMillis = (long) (1000 * Double.parseDouble(args.get(2))); // convert secs -> millis
+
+                Store.RedisList redisList = Store.data.compute(key, (k, existing) -> {
+                    if (existing == null || expired(existing)) {
+                        return new Store.Entry(new Store.RedisList(new ArrayList<>()), null);
+                    }
+                    return existing; // keep valid entry
+                }).value() instanceof Store.RedisList list ? list : null;
+
+                if (redisList == null) {writeNullBulkString(out); return;} // incorrect type
+
+                String popped = redisList.blockingPop(timeoutMillis);
+                // if timeout, cleanup unused resource and exit
+                if (popped == null) {writeNullArray(out); Store.data.remove(key); return;}
+                else writeArray(out, List.of(key, popped));
+
             }
             default -> throw new RuntimeException("Unknown command: " + args.get(0));
         }
@@ -149,24 +167,18 @@ public class Protocol {
     static void pushToRedisList(List<String> args, BufferedOutputStream out, Commands command) throws IOException {
         String key = args.get(1);
 
-        Store.Entry entry = Store.data.get(key);
-        Store.RedisList redisList;
-        if (entry == null) {
-            // inserting new redis list
-            redisList = new Store.RedisList(new ArrayList<>());
-            Store.data.put(key, new Store.Entry(redisList, null));
-        } else if (entry.value() instanceof Store.RedisList list) {
-            if (expired(entry)) {
-                // replace expired key-value pair
-                redisList = new Store.RedisList(new ArrayList<>());
-                Store.data.put(key, new Store.Entry(redisList, null));
-            } else {
-                redisList = list;
+        Store.Entry entry = Store.data.compute(key, (k, existing) -> {
+            if (existing == null || expired(existing)) {
+                // create fresh, atomically replacing expired entry
+                return new Store.Entry(new Store.RedisList(new ArrayList<>()), null);
             }
-        } else {
-            // value of entry not redis list
-            writeNullBulkString(out);
-            return;
+            return existing; // keep valid entry
+        });
+
+
+        if (!(entry.value() instanceof Store.RedisList redisList)) {
+           writeNullBulkString(out);
+           return;
         }
 
         if (command == Commands.LPUSH) {
@@ -207,6 +219,10 @@ public class Protocol {
         for (String value : values) {
             writeBulkString(out, value);
         }
+    }
+
+    static void writeNullArray(BufferedOutputStream out) throws IOException {
+        out.write(NULL_ARRAY.getBytes(StandardCharsets.UTF_8));
     }
 
     static List<String> parseArray(BufferedInputStream in) throws IOException {

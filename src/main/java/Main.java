@@ -43,6 +43,8 @@ public class Main {
       // ignore, client finished
     } catch (IOException e) {
       System.err.println("Client Exception " + e.getMessage());
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
     }
   }
 }
