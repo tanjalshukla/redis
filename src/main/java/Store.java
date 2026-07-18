@@ -7,7 +7,45 @@ import java.util.concurrent.locks.ReentrantLock;
 public class Store {
 
     sealed interface RedisValue
-        permits RedisString, RedisList {}
+        permits RedisString, RedisList, RedisSet, RedisZSet, RedisStream, RedisHash, RedisVectorSet {
+        String printType();
+    }
+
+    static final class RedisSet implements RedisValue {
+        @Override
+        public String printType() {
+            return "set";
+        }
+    }
+
+    static final class RedisZSet implements RedisValue {
+        @Override
+        public String printType() {
+            return "zset";
+        }
+    }
+
+    static final class RedisStream implements RedisValue {
+        @Override
+        public String printType() {
+            return "stream";
+        }
+    }
+
+    static final class RedisHash implements RedisValue {
+        @Override
+        public String printType() {
+            return "hash";
+        }
+    }
+
+    static final class RedisVectorSet implements RedisValue {
+        @Override
+        public String printType() {
+            return "vectorset";
+        }
+    }
+
 
     static final class RedisList implements RedisValue {
         private final List<String> values;
@@ -68,6 +106,7 @@ public class Store {
             } finally {
                 lock.unlock();
             }
+
         }
 
         List<String> popMany(int count ) {
@@ -102,9 +141,29 @@ public class Store {
             return Collections.unmodifiableList(values);
         }
 
+        @Override
+        public String printType() {
+            return "list";
+        }
+
     }
 
-    record RedisString(String value) implements RedisValue {}
+    static final class RedisString implements RedisValue {
+        final String value;
+
+        RedisString(String value) {
+            this.value = value;
+        }
+
+        String value() {
+            return this.value;
+        }
+
+        @Override
+        public String printType() {
+            return "string";
+        }
+    }
 
     record Entry (RedisValue value, Instant expiresAt){};
 

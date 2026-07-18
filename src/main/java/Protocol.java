@@ -15,6 +15,8 @@ public class Protocol {
     private static final String NULL_BULK_STRING = "$-1\r\n";
     private static final String NULL_ARRAY = "*-1\r\n";
 
+    private static final String NULL_TYPE = "none";
+
     public enum Commands {
         ECHO,
         PING,
@@ -27,7 +29,8 @@ public class Protocol {
         LRANGE,
         LLEN,
         LPOP,
-        BLPOP
+        BLPOP,
+        TYPE
     }
 
     public enum ExpirationUnit {
@@ -158,6 +161,16 @@ public class Protocol {
                 if (popped == null) {writeNullArray(out); Store.data.remove(key); return;}
                 else writeArray(out, List.of(key, popped));
 
+            }
+            case TYPE -> {
+                String key = args.get(1);
+                Store.Entry entry = Store.data.get(key);
+                if (entry == null || expired(entry)) {
+                    if (entry != null && expired(entry)) Store.data.remove(key);
+                    writeString(out, NULL_TYPE);
+                    return;
+                }
+                writeString(out, entry.value().printType());
             }
             default -> throw new RuntimeException("Unknown command: " + args.get(0));
         }
