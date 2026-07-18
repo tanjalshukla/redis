@@ -1,8 +1,5 @@
 import java.time.Instant;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -30,6 +27,15 @@ public class Store {
 
         String pop() {
             return this.values.removeFirst();
+        }
+
+        List<String> popMany(int count ) {
+            List<String> removed = new ArrayList<>();
+            int limit = Math.min(count, this.values.size());
+            for (int i = 0; i < limit; i++) {
+                removed.add(this.values.removeFirst());
+            }
+            return removed;
         }
 
         List<String> range(int start, int end) {

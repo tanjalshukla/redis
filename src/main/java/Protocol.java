@@ -123,11 +123,23 @@ public class Protocol {
             case LPOP -> {
                 String key = args.get(1);
                 Store.Entry entry = Store.data.get(key);
+                // null bulk string if no entry or not a redis list
                 if (entry == null || !(entry.value() instanceof Store.RedisList list)) {
                     writeNullBulkString(out);
-                } else {
-                    writeBulkString(out, list.pop());
+                    return;
                 }
+
+                // if multiple pop arg
+                if (args.size() > 2) {
+                    System.out.println("Popping multiple");
+                    // pop multiple
+                    int num = Integer.parseInt(args.get(2));
+                    List<String> popped = list.popMany(num);
+                    writeArray(out, popped);
+                    return;
+                }
+                // pop once
+                writeBulkString(out, list.pop());
             }
             default -> throw new RuntimeException("Unknown command: " + args.get(0));
         }
